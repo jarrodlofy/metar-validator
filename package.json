@@ -1,0 +1,12 @@
+{
+  "name": "metar-validator",
+  "version": "1.0.0",
+  "description": "METAR collection server and validator for KFMH",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=16"
+  }
+}

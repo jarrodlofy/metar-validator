@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>METAR Validator — KFMH</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, -apple-system, sans-serif; font-size: 14px; background: #f5f5f5; color: #1a1a1a; }
+  header { background: #1a2744; color: #fff; padding: 16px 24px; display: flex; align-items: center; gap: 12px; }
+  header h1 { font-size: 18px; font-weight: 600; }
+  header .sub { font-size: 12px; opacity: .7; margin-top: 2px; }
+  .controls { background: #fff; border-bottom: 1px solid #e0e0e0; padding: 12px 24px; display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+  .control-group { display: flex; flex-direction: column; gap: 4px; }
+  .control-group label { font-size: 11px; font-weight: 600; color: #666; text-transform: uppercase; letter-spacing: .5px; }
+  .control-group input, .control-group select { border: 1px solid #ccc; border-radius: 4px; padding: 6px 10px; font-size: 13px; font-family: monospace; }
+  button { background: #1a2744; color: #fff; border: none; border-radius: 4px; padding: 8px 18px; font-size: 13px; font-weight: 600; cursor: pointer; height: 34px; align-self: flex-end; }
+  button:hover { background: #263a6e; }
+  button.secondary { background: #666; }
+  button.secondary:hover { background: #444; }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px 24px; }
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-bottom: 20px; }
+  .stat-card { background: #fff; border: 1px solid #e0e0e0; border-radius: 6px; padding: 12px; text-align: center; }
+  .stat-card .val { font-size: 28px; font-weight: 700; }
+  .stat-card .lbl { font-size: 11px; color: #666; margin-top: 2px; }
+  .stat-card.red .val { color: #c62828; }
+  .stat-card.yellow .val { color: #e65100; }
+  .hourly-grid { background: #fff; border: 1px solid #e0e0e0; border-radius: 6px; padding: 16px; margin-bottom: 20px; }
+  .hourly-grid h3 { font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+  .hour-cells { display: flex; flex-wrap: wrap; gap: 4px; }
+  .hour-cell { width: 38px; height: 38px; border-radius: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 9px; font-weight: 600; cursor: default; }
+  .hour-cell .dy { opacity: .7; }
+  .hour-cell .hr { font-size: 11px; }
+  .hour-cell.green { background: #c8e6c9; color: #1b5e20; }
+  .hour-cell.red { background: #ffcdd2; color: #b71c1c; }
+  .hour-cell.grey { background: #f5f5f5; color: #9e9e9e; border: 1px solid #e0e0e0; }
+  .banner { border-radius: 6px; padding: 12px 16px; margin-bottom: 12px; font-size: 13px; }
+  .banner.error { background: #ffebee; border: 1px solid #ef9a9a; color: #b71c1c; }
+  .banner.warning { background: #fff8e1; border: 1px solid #ffe082; color: #e65100; }
+  .banner.info { background: #e3f2fd; border: 1px solid #90caf9; color: #0d47a1; }
+  .banner.ok { background: #e8f5e9; border: 1px solid #a5d6a7; color: #1b5e20; }
+  .banner strong { font-weight: 700; }
+  details { background: #fff; border: 1px solid #e0e0e0; border-radius: 6px; margin-bottom: 10px; overflow: hidden; }
+  details.has-error { border-color: #ef9a9a; }
+  details.has-warning { border-color: #ffe082; }
+  summary { padding: 12px 16px; cursor: pointer; display: flex; align-items: center; gap: 8px; font-size: 13px; font-family: monospace; font-weight: 600; list-style: none; }
+  summary::-webkit-details-marker { display: none; }
+  summary .arrow { font-size: 10px; margin-right: 4px; transition: transform .15s; }
+  details[open] summary .arrow { transform: rotate(90deg); }
+  summary .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  summary .dot.green { background: #43a047; }
+  summary .dot.red { background: #e53935; }
+  summary .dot.yellow { background: #fb8c00; }
+  summary .meta { font-size: 11px; font-weight: 400; color: #666; font-family: system-ui; margin-left: auto; }
+  .report-body { padding: 0 16px 16px; }
+  .raw-metar { font-family: monospace; font-size: 12px; background: #f5f5f5; border-radius: 4px; padding: 8px 10px; margin-bottom: 12px; word-break: break-all; color: #333; }
+  .fields-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+  .field-tile { border-radius: 4px; padding: 6px 10px; min-width: 80px; }
+  .field-tile.ok { background: #e8f5e9; border: 1px solid #c8e6c9; }
+  .field-tile.error { background: #ffebee; border: 1px solid #ffcdd2; }
+  .field-tile.warning { background: #fff8e1; border: 1px solid #ffe082; }
+  .field-tile.absent { background: #fafafa; border: 1px solid #e0e0e0; color: #bbb; }
+  .field-tile .tile-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #666; }
+  .field-tile .tile-value { font-family: monospace; font-size: 12px; font-weight: 600; margin-top: 2px; }
+  .field-tile .tile-note { font-size: 10px; color: #555; margin-top: 2px; }
+  .cross-checks { margin-top: 12px; }
+  .paste-area { background: #fff; border: 1px solid #e0e0e0; border-radius: 6px; padding: 16px; margin-bottom: 20px; }
+  .paste-area textarea { width: 100%; height: 120px; font-family: monospace; font-size: 12px; border: 1px solid #ccc; border-radius: 4px; padding: 8px; resize: vertical; }
+  #status-bar { font-size: 12px; color: #666; padding: 8px 0; }
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #ccc; border-top-color: #1a2744; border-radius: 50%; animation: spin .6s linear infinite; vertical-align: middle; margin-right: 6px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .missing-banner { margin-bottom: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>METAR Validator</h1>
+    <div class="sub">FAA FMH-1 / WMO 4678 rules — KFMH Otis ANGB</div>
+  </div>
+</header>
+
+<div class="controls">
+  <div class="control-group">
+    <label>Station ID</label>
+    <input type="text" id="stationInput" value="KFMH" maxlength="4" style="width:80px;text-transform:uppercase">
+  </div>
+  <div class="control-group">
+    <label>Look-back</label>
+    <select id="hoursSelect">
+      <option value="1">1 hour</option>
+      <option value="2">2 hours</option>
+      <option value="3">3 hours</option>
+      <option value="6">6 hours</option>
+      <option value="12">12 hours</option>
+      <option value="24">24 hours</option>
+      <option value="48" selected>48 hours</option>
+    </select>
+  </div>
+  <div class="control-group">
+    <label>Server URL</label>
+    <input type="text" id="serverUrl" value="https://metar-validator-kfmh-mellowing-lagoon-3794.fly.dev" style="width:220px">
+  </div>
+  <button onclick="runCheck()">Check METARs</button>
+</div>
+
+<main>
+  <div id="status-bar"></div>
+  <div id="output"></div>
+</main>
+
+<script>
+// ──────────────────────────────────────────────────────────
+// WMO 4678 taxonomy
+// ──────────────────────────────────────────────────────────
+const PLAIN_OBSCURATIONS = new Set(['BR','FG','FU','VA','DU','SA','HZ','PY']);
+const BLOWING_OBSCURATIONS = new Set(['BLDU','BLSA','BLSN','BLPY']);
+const DRIFTING = new Set(['DRSN','DRDU','DRSA']);
+const PRECIPITATION = new Set(['DZ','RA','SN','SG','IC','PL','GR','GS']);
+const ALL_OBSCURATIONS = new Set([...PLAIN_OBSCURATIONS, ...BLOWING_OBSCURATIONS]);
+
+const WX_RE = /^([-+]|VC)?(MI|PR|BC|DR|BL|SH|TS|FZ)?(DZ|RA|SN|SG|IC|PL|GR|GS|UP)?(BR|FG|FU|VA|DU|SA|HZ|PY)?(PO|SQ|FC|SS|DS)?$/;
+const KNOWN_WX_CODES = [
+  'BCFG','BLDU','BLSA','BLSN','BLPY','BLUP',
+  'BR','DS','DU','DZ','FC','FG','FR','FU','FZDZ','FZFG','FZRA','FZUP','GR','GS',
+  'HZ','IC','MIFG','PL','PO','PRFG','PY','RA','SA','SG','SHGR','SHGS','SHPL','SHRA','SHSN',
+  'SHUP','SN','SQ','SS','TSGR','TSGS','TSPL','TSRA','TSSN','TSUP','UP','VA',
+  'DRDU','DRSA','DRSN','VCBLDU','VCBLSA','VCBLSN','VCBLPY',
+  'VCFG','VCSH','VCTSRA','VCTS','VCSS','VCDS','VCPO','VCFC',
+  '-DZ','-RA','-SN','-SG','-PL','-GR','-GS','-UP',
+  '+DZ','+RA','+SN','+SG','+PL','+GR','+GS','+UP',
+  '-DZRA','-RASN','+RASN','RASN'
+];
+
+function isObscuration(code) {
+  const base = code.replace(/^[-+]/, '').replace(/^VC/, '');
+  return ALL_OBSCURATIONS.has(base);
+}
+function isBlowingObscuration(code) {
+  return BLOWING_OBSCURATIONS.has(code.replace(/^[-+]/,'').replace(/^VC/,''));
+}
+function isDrifting(code) {
+  return DRIFTING.has(code.replace(/^[-+]/,'').replace(/^VC/,''));
+}
+function isPrecipitation(code) {
+  const base = code.replace(/^[-+]/,'').replace(/^VC/,'');
+  return [...PRECIPITATION].some(p => base.includes(p));
+}
+function isUP(code) {
+  return /UP/.test(code.replace(/^[-+]/,'').replace(/^(VC|SH|TS|FZ|BL|DR)/,''));
+}
+
+// ──────────────────────────────────────────────────────────
+// Parsing helpers
+// ──────────────────────────────────────────────────────────
+function parseFraction(s) {
+  // e.g. "1/4", "1/2", "3/4", "1 1/2", "P6SM", "M1/4SM", "1SM", "10SM"
+  if (!s) return null;
+  s = s.trim();
+  if (s === 'CAVOK') return 9999;
+  if (s === '9999') return 9999;
+  if (/^\d{4}$/.test(s)) return parseInt(s);
+  const pMatch = s.match(/^P(\d+)SM$/);
+  if (pMatch) return parseFloat(pMatch[1]) + 0.001;
+  const mMatch = s.match(/^M(\d+(?:\/\d+)?)SM$/);
+  if (mMatch) return evalFrac(mMatch[1]) - 0.001;
+  s = s.replace(/SM$/,'').trim();
+  const parts = s.split(' ');
+  if (parts.length === 2) return parseFloat(parts[0]) + evalFrac(parts[1]);
+  return evalFrac(s);
+}
+function evalFrac(s) {
+  if (s.includes('/')) {
+    const [a,b] = s.split('/');
+    return parseFloat(a)/parseFloat(b);
+  }
+  return parseFloat(s);
+}
+
+function parseTemp(s) {
+  if (!s) return null;
+  if (s.startsWith('M')) return -parseInt(s.slice(1));
+  return parseInt(s);
+}
+
+// ──────────────────────────────────────────────────────────
+// Main METAR parser
+// ──────────────────────────────────────────────────────────
+function parseMETAR(raw) {
+  const result = {
+    raw, fields: {}, errors: [], warnings: [], crossErrors: [], crossWarnings: []
+  };
+  const F = result.fields;
+
+  // Tokenise — collapse whitespace
+  const tokens = raw.trim().replace(/\s+/g, ' ').split(' ');
+  let i = 0;
+  const next = () => tokens[i] || '';
+  const consume = () => tokens[i++] || '';
+
+  // 1. Report type
+  const type = next();
+  if (type === 'METAR' || type === 'SPECI') {
+    F.type = { raw: consume(), ok: true };
+  } else {
+    F.type = { raw: type, ok: false, note: 'Must be METAR or SPECI' };
+    result.errors.push('Report type must be METAR or SPECI');
+    consume();
+  }
+
+  // 2. Station ID
+  const stId = next();
+  if (/^[A-Z]{4}$/.test(stId)) {
+    F.station = { raw: consume(), ok: true };
+  } else {
+    F.station = { raw: stId, ok: false, note: '4-letter ICAO required' };
+    result.errors.push(`Station ID "${stId}" is not a valid 4-letter ICAO`);
+    consume();
+  }
+
+  // 3. Obs time DDHHmmZ
+  const timeT = next();
+  const timeM = timeT.match(/^(\d{2})(\d{2})(\d{2})Z$/);
+  if (timeM) {
+    const [, dd, hh, mm] = timeM;
+    const hour = parseInt(hh), minute = parseInt(mm);
+    const isScheduled = minute >= 45 && minute <= 59;
+    const isTop = minute < 5;
+    const note = (F.type && F.type.raw === 'SPECI') ? 'SPECI (non-routine)'
+      : isScheduled ? `Scheduled hourly (:${mm})`
+      : isTop ? `Near top of hour (:${mm})`
+      : `Obs minute :${mm}`;
+    F.time = { raw: consume(), ok: true, note, dd: parseInt(dd), hh: hour, mm: minute };
+  } else {
+    F.time = { raw: timeT, ok: false, note: 'Expected DDHHmmZ' };
+    result.errors.push(`Obs time "${timeT}" not in DDHHmmZ format`);
+    consume();
+  }
+
+  // 4. Modifier AUTO/COR (optional)
+  if (next() === 'AUTO' || next() === 'COR') {
+    F.modifier = { raw: consume(), ok: true };
+  } else {
+    F.modifier = { raw: null, ok: true, absent: true };
+  }
+
+  // 5. Wind
+  const windT = next();
+  const windM = windT.match(/^(VRB|\d{3})(\d{2,3})(G(\d{2,3}))?KT$/);
+  if (windM) {
+    const dir = windM[1], spd = parseInt(windM[2]), gust = windM[4] ? parseInt(windM[4]) : null;
+    let note = `${dir === 'VRB' ? 'Variable' : dir + '°'} at ${spd} kt`;
+    if (gust) note += `, gusting ${gust} kt`;
+    F.wind = { raw: consume(), ok: true, note, dir, speed: spd, gust };
+  } else if (windT === '00000KT') {
+    F.wind = { raw: consume(), ok: true, note: 'Calm' };
+  } else {
+    F.wind = { raw: windT, ok: false, note: 'Expected dddffKT or VRBffKT' };
+    result.errors.push(`Wind "${windT}" not in expected format`);
+    consume();
+  }
+
+  // 6. Wind variability (optional) dddVddd
+  if (/^\d{3}V\d{3}$/.test(next())) {
+    const wv = consume();
+    const [from, to] = wv.split('V');
+    F.windVar = { raw: wv, ok: true, note: `Variable ${from}°–${to}°` };
+  } else {
+    F.windVar = { raw: null, ok: true, absent: true };
+  }
+
+  // 7. Visibility
+  const visT = next();
+  let visConsumed = false;
+  let visSmVal = null;
+  let visRaw = null;
+
+  if (visT === 'CAVOK') {
+    visRaw = consume(); visSmVal = 9999; visConsumed = true;
+    F.visibility = { raw: visRaw, ok: true, note: 'CAVOK — ceiling/vis OK' };
+  } else if (/^\d{4}$/.test(visT)) {
+    visRaw = consume(); visSmVal = parseInt(visRaw); visConsumed = true;
+    F.visibility = { raw: visRaw, ok: true, note: `${visSmVal}m visibility` };
+  } else if (visT === '9999') {
+    visRaw = consume(); visSmVal = 9999; visConsumed = true;
+    F.visibility = { raw: visRaw, ok: true, note: '≥10km (9999)' };
+  } else if (/^(P|M)?\d+(\s*\d+\/\d+)?SM$/.test(visT)) {
+    visRaw = consume(); visSmVal = parseFraction(visRaw); visConsumed = true;
+    F.visibility = { raw: visRaw, ok: true, note: `${visRaw}` };
+  } else if (/^\d+$/.test(visT) && /^\d+\/\d+SM$/.test(tokens[i+1])) {
+    // e.g. "1 1/4SM"
+    const a = consume(), b = consume();
+    visRaw = `${a} ${b}`; visSmVal = parseFraction(visRaw); visConsumed = true;
+    F.visibility = { raw: visRaw, ok: true, note: `${visRaw}` };
+  } else {
+    F.visibility = { raw: visT, ok: false, note: 'Unrecognised visibility format' };
+    result.errors.push(`Visibility "${visT}" not recognised`);
+    consume();
+    visConsumed = true;
+  }
+
+  // 8. RVR (optional) — R<rwy>/<vis>[FT]
+  const rvrList = [];
+  while (/^R\d{2}[LRC]?\//.test(next())) {
+    rvrList.push(consume());
+  }
+  if (rvrList.length) {
+    F.rvr = { raw: rvrList.join(' '), ok: true, note: `${rvrList.length} runway(s)` };
+  } else {
+    F.rvr = { raw: null, ok: true, absent: true };
+  }
+
+  // 9. Present weather — collect all wx groups until we hit sky or temp
+  const wxGroups = [];
+  const skyRe = /^(SKC|CLR|NSC|NCD|CAVOK|FEW|SCT|BKN|OVC|VV)\d{0,3}(CB|TCU)?$/;
+  const tempRe = /^M?\d+\/M?\d+$/;
+  while (i < tokens.length && !skyRe.test(next()) && !tempRe.test(next()) && next() !== 'RMK' && next() !== 'TEMPO' && next() !== 'BECMG') {
+    const t = next();
+    // stop if it looks like altimeter
+    if (/^[AQ]\d{4}$/.test(t)) break;
+    // naive check — if it doesn't look like weather, stop
+    if (!/^[-+]?(VC)?(MI|PR|BC|DR|BL|SH|TS|FZ)?(DZ|RA|SN|SG|IC|PL|GR|GS|UP)?(BR|FG|FU|VA|DU|SA|HZ|PY)?(PO|SQ|FC|SS|DS)?$/.test(t) && !KNOWN_WX_CODES.includes(t)) break;
+    wxGroups.push(consume());
+  }
+
+  if (wxGroups.length) {
+    const invalid = wxGroups.filter(w => !KNOWN_WX_CODES.includes(w) && !/^[-+]?(VC)?(MI|PR|BC|DR|BL|SH|TS|FZ)?(DZ|RA|SN|SG|IC|PL|GR|GS|UP)?(BR|FG|FU|VA|DU|SA|HZ|PY)?(PO|SQ|FC|SS|DS)?$/.test(w));
+    if (invalid.length) {
+      F.weather = { raw: wxGroups.join(' '), ok: false, note: `Unknown code(s): ${invalid.join(', ')}` };
+      result.errors.push(`Unknown present weather code(s): ${invalid.join(', ')}`);
+    } else {
+      F.weather = { raw: wxGroups.join(' '), ok: true, note: wxGroups.join(' ') };
+    }
+  } else {
+    F.weather = { raw: null, ok: true, absent: true };
+  }
+
+  // 10. Sky conditions — collect layers
+  const skyLayers = [];
+  while (i < tokens.length && skyRe.test(next())) {
+    const t = consume();
+    const m = t.match(/^(SKC|CLR|NSC|NCD|CAVOK|FEW|SCT|BKN|OVC|VV)(\d{3})?(CB|TCU)?$/);
+    if (m) {
+      const cov = m[1], hNum = m[2] ? parseInt(m[2]) * 100 : null, addl = m[3] || null;
+      skyLayers.push({ raw: t, cov, heightFt: hNum, addl });
+    }
+  }
+
+  if (skyLayers.length) {
+    // Validate ordering
+    const layerErrors = [];
+    let prevH = -1;
+    let prevCov = null;
+    const covOrder = { FEW: 1, SCT: 2, BKN: 3, OVC: 4, VV: 4 };
+    let ceilFound = false;
+    skyLayers.forEach((l, idx) => {
+      if (ceilFound) {
+        layerErrors.push(`Layer after OVC/VV: ${l.raw}`);
+        return;
+      }
+      if (l.cov === 'OVC' || l.cov === 'VV') ceilFound = true;
+      if (l.heightFt !== null) {
+        if (l.heightFt === prevH) layerErrors.push(`Duplicate height ${l.raw}`);
+        else if (l.heightFt < prevH) layerErrors.push(`Height not ascending at ${l.raw}`);
+        if (prevCov && covOrder[l.cov] && covOrder[prevCov] && covOrder[l.cov] < covOrder[prevCov] && l.heightFt > prevH) {
+          layerErrors.push(`${l.raw}: lesser coverage above ${prevCov} — ceilometer blocked`);
+        }
+        prevH = l.heightFt;
+        prevCov = l.cov;
+      }
+    });
+    const skyNote = skyLayers.map(l => {
+      let s = l.raw;
+      if (l.heightFt !== null) s += ` (${l.heightFt.toLocaleString()}ft)`;
+      if (l.addl) s += ` [${l.addl}]`;
+      return s;
+    }).join(', ');
+
+    if (layerErrors.length) {
+      F.sky = { raw: skyLayers.map(l=>l.raw).join(' '), ok: false, note: layerErrors.join('; ') };
+      layerErrors.forEach(e => result.errors.push(`Sky: ${e}`));
+    } else {
+      F.sky = { raw: skyLayers.map(l=>l.raw).join(' '), ok: true, note: skyNote };
+    }
+  } else {
+    F.sky = { raw: null, ok: true, absent: true };
+  }
+
+  // 11. Temp/Dewpoint
+  const tempT = next();
+  const tempM = tempT.match(/^(M?\d+)\/(M?\d+)$/);
+  if (tempM) {
+    const tVal = parseTemp(tempM[1]), dVal = parseTemp(tempM[2]);
+    const spread = tVal - dVal;
+    let note = `${tVal}°C / ${dVal}°C, spread ${spread}°C`;
+    let warnSpread = false;
+    if (spread <= 3) { note += ' ⚠ Tight spread'; warnSpread = true; }
+    F.temp = { raw: consume(), ok: true, note, temp: tVal, dew: dVal };
+    if (warnSpread) result.warnings.push(`Tight temp/dew spread (${spread}°C) — fog/cloud formation likely`);
+  } else {
+    F.temp = { raw: tempT, ok: false, note: 'Expected TT/TdTd' };
+    result.errors.push(`Temp/dew "${tempT}" not in expected format`);
+    consume();
+  }
+
+  // 12. Altimeter A/Q
+  const altT = next();
+  if (/^A\d{4}$/.test(altT)) {
+    const inHg = parseInt(altT.slice(1)) / 100;
+    F.altimeter = { raw: consume(), ok: true, note: `${inHg.toFixed(2)} inHg` };
+  } else if (/^Q\d{4}$/.test(altT)) {
+    const hPa = parseInt(altT.slice(1));
+    const inHg = (hPa * 0.02953).toFixed(2);
+    F.altimeter = { raw: consume(), ok: true, note: `${hPa} hPa (${inHg} inHg)` };
+  } else {
+    F.altimeter = { raw: altT, ok: false, note: 'Expected A####  or Q####' };
+    result.errors.push(`Altimeter "${altT}" not in expected format`);
+    consume();
+  }
+
+  // 13. Remarks
+  if (next() === 'RMK') {
+    const rmkRaw = tokens.slice(i).join(' ');
+    i = tokens.length;
+    const decoded = decodeRemarks(rmkRaw);
+    F.remarks = { raw: rmkRaw, ok: true, note: decoded.join('; ') || 'Remarks present' };
+    if (rmkRaw.includes('$')) result.warnings.push('Maintenance needed ($)');
+  } else {
+    F.remarks = { raw: null, ok: true, absent: true };
+  }
+
+  // ── Cross-field validation ──────────────────────────────
+  const vis = visSmVal;
+  const wxArr = wxGroups;
+  const hasObscuration = wxArr.some(w => isObscuration(w));
+  const hasBlowing = wxArr.some(w => isBlowingObscuration(w));
+  const hasDrifting = wxArr.some(w => isDrifting(w));
+  const hasPrecip = wxArr.some(w => isPrecipitation(w));
+  const hasUP = wxArr.some(w => isUP(w));
+  const hasFG = wxArr.some(w => w.replace(/^[-+]/,'') === 'FG' || w === 'FZFG' || w === 'MIFG' || w === 'BCFG' || w === 'PRFG');
+  const hasBR = wxArr.some(w => w.replace(/^[-+]/,'') === 'BR');
+
+  if (vis !== null) {
+    // Rule 1: vis < 7SM → obscuration required
+    if (vis < 7) {
+      if (!hasObscuration && !hasUP) {
+        if (hasPrecip && !hasDrifting) {
+          result.crossErrors.push('Vis < 7SM but no obscuration coded — precipitation alone (e.g. RA, SN) does not count as an obscuration; add BR, FG, HZ, etc.');
+        } else if (hasDrifting && !hasPrecip) {
+          result.crossErrors.push('Vis < 7SM but no obscuration coded — drifting phenomena (DRSN etc.) are not obscurations; add BR, FG, HZ, etc.');
+        } else {
+          result.crossErrors.push('Vis < 7SM requires an obscuration (BR, FG, HZ, FU, VA, DU, SA, PY, BLDU, BLSA, BLSN, BLPY)');
+        }
+      } else if (hasUP && !hasObscuration) {
+        result.crossWarnings.push('UP present with vis < 7SM — obscuration type unknown; COR may be needed');
+      }
+    }
+
+    // Rule 2: vis < 5/8SM → FG (or blowing obsc) required
+    if (vis < 0.625) {
+      if (!hasFG && !hasBlowing) {
+        if (hasBR) {
+          result.crossErrors.push('Vis < 5/8SM but BR coded — BR is only valid at ≥5/8SM; recode as FG');
+        } else if (hasObscuration) {
+          const wrongCodes = wxArr.filter(w => isObscuration(w) && !isBlowingObscuration(w) && !w.match(/FG$/));
+          result.crossErrors.push(`Vis < 5/8SM requires FG (or blowing obscuration); wrong obscuration coded: ${wrongCodes.join(', ')}`);
+        } else if (hasUP) {
+          result.crossWarnings.push('Vis < 5/8SM with UP — fog likely but type unknown');
+        } else {
+          result.crossErrors.push('Vis < 5/8SM requires FG (or BLDU/BLSA/BLSN/BLPY)');
+        }
+      }
+    }
+
+    // Rule 3: vis 5/8SM–7SM → valid obscurations
+    if (vis >= 0.625 && vis < 7) {
+      const VALID_MID = new Set(['BR','HZ','FU','VA','DU','SA','PY','FG','BCFG','MIFG','PRFG','BLDU','BLSA','BLSN','BLPY','FZFG']);
+      const unexpectedObsc = wxArr.filter(w => {
+        const b = w.replace(/^[-+]/,'').replace(/^VC/,'');
+        return isObscuration(w) && !VALID_MID.has(b);
+      });
+      if (unexpectedObsc.length) {
+        result.crossErrors.push(`Vis ${vis}SM (5/8–7SM range) — unexpected obscuration(s): ${unexpectedObsc.join(', ')}`);
+      }
+    }
+  }
+
+  // Rule 4: UP → always warn
+  if (hasUP) {
+    result.crossWarnings.push('UP (unknown precipitation) — ASOS could not identify type; COR may be needed');
+  }
+
+  return result;
+}
+
+function decodeRemarks(rmk) {
+  const decoded = [];
+  if (/\bAO1\b/.test(rmk)) decoded.push('AO1 — no precipitation discriminator');
+  if (/\bAO2\b/.test(rmk)) decoded.push('AO2 — precipitation discriminator present');
+  const slpM = rmk.match(/\bSLP(\d{3})\b/);
+  if (slpM) {
+    const slpRaw = parseInt(slpM[1]);
+    const slpHPa = (slpRaw >= 550 ? 900 : 1000) + slpRaw / 10;
+    decoded.push(`SLP ${slpHPa.toFixed(1)} hPa`);
+  }
+  const tM = rmk.match(/\bT(\d)(\d{3})(\d)(\d{3})\b/);
+  if (tM) {
+    const t = (tM[1]==='1'?-1:1) * parseInt(tM[2]) / 10;
+    const d = (tM[3]==='1'?-1:1) * parseInt(tM[4]) / 10;
+    decoded.push(`Precise temp ${t.toFixed(1)}°C / dew ${d.toFixed(1)}°C`);
+  }
+  if (/\$/.test(rmk)) decoded.push('Maintenance indicator ($)');
+  return decoded;
+}
+
+// ──────────────────────────────────────────────────────────
+// Hourly gap detection
+// ──────────────────────────────────────────────────────────
+function buildHourlyGrid(records, windowHours) {
+  const now = new Date();
+  const cutoff = new Date(now.getTime() - windowHours * 3600000);
+  const grid = [];
+
+  // Build set of hour keys that have a scheduled METAR (:45–:59)
+  const covered = new Set();
+  records.forEach(r => {
+    const m = r.raw.match(/\d{2}(\d{2})(\d{2})Z/);
+    if (!m) return;
+    const hh = parseInt(m[1]), mm = parseInt(m[2]);
+    if (mm >= 45 && mm <= 59) {
+      // Determine calendar date from fetchedAt
+      const dt = new Date(r.fetchedAt);
+      const key = `${dt.getUTCFullYear()}-${dt.getUTCMonth()}-${dt.getUTCDate()}-${hh}`;
+      covered.add(key);
+    }
+  });
+
+  // Walk hours from cutoff to now
+  const start = new Date(cutoff);
+  start.setUTCMinutes(0, 0, 0);
+  const end = new Date(now);
+  end.setUTCMinutes(0, 0, 0);
+
+  for (let d = new Date(start); d <= end; d = new Date(d.getTime() + 3600000)) {
+    const hh = d.getUTCHours();
+    const key = `${d.getUTCFullYear()}-${d.getUTCMonth()}-${d.getUTCDate()}-${hh}`;
+    const isCurrent = d.getUTCFullYear() === now.getUTCFullYear()
+      && d.getUTCMonth() === now.getUTCMonth()
+      && d.getUTCDate() === now.getUTCDate()
+      && d.getUTCHours() === now.getUTCHours();
+    grid.push({
+      key,
+      date: new Date(d),
+      hh,
+      isCurrent,
+      hasMETAR: covered.has(key)
+    });
+  }
+  return grid;
+}
+
+// ──────────────────────────────────────────────────────────
+// Rendering helpers
+// ──────────────────────────────────────────────────────────
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function renderFieldTile(label, field) {
+  if (!field) return '';
+  if (field.absent) {
+    return `<div class="field-tile absent"><div class="tile-label">${esc(label)}</div><div class="tile-value">—</div></div>`;
+  }
+  const cls = field.ok ? 'ok' : 'error';
+  const val = field.raw !== null ? esc(field.raw) : '—';
+  const note = field.note ? `<div class="tile-note">${esc(field.note)}</div>` : '';
+  return `<div class="field-tile ${cls}"><div class="tile-label">${esc(label)}</div><div class="tile-value">${val}</div>${note}</div>`;
+}
+
+function renderReport(parsed, idx) {
+  const F = parsed.fields;
+  const hasError = parsed.errors.length > 0 || parsed.crossErrors.length > 0;
+  const hasWarning = parsed.warnings.length > 0 || parsed.crossWarnings.length > 0;
+  const dotCls = hasError ? 'red' : hasWarning ? 'yellow' : 'green';
+  const detailsCls = hasError ? 'has-error' : hasWarning ? 'has-warning' : '';
+  const openAttr = idx === 0 ? ' open' : '';
+
+  const errorBanners = [
+    ...parsed.errors.map(e => `<div class="banner error"><strong>Error:</strong> ${esc(e)}</div>`),
+    ...parsed.crossErrors.map(e => `<div class="banner error"><strong>Rule violation:</strong> ${esc(e)}</div>`)
+  ].join('');
+  const warnBanners = [
+    ...parsed.warnings.map(w => `<div class="banner warning"><strong>Warning:</strong> ${esc(w)}</div>`),
+    ...parsed.crossWarnings.map(w => `<div class="banner warning"><strong>Caution:</strong> ${esc(w)}</div>`)
+  ].join('');
+
+  const skyField = F.sky;
+  const skyDisplay = skyField && !skyField.absent
+    ? `<div class="field-tile ${skyField.ok?'ok':'error'}"><div class="tile-label">Sky</div><div class="tile-value">${esc(skyField.raw)}</div><div class="tile-note">${esc(skyField.note||'')}</div></div>`
+    : `<div class="field-tile absent"><div class="tile-label">Sky</div><div class="tile-value">—</div></div>`;
+
+  const timeM = F.time && !F.time.absent ? F.time.raw : '';
+
+  return `
+<details class="${detailsCls}"${openAttr}>
+  <summary>
+    <span class="arrow">▶</span>
+    <span class="dot ${dotCls}"></span>
+    ${esc(F.station && F.station.raw ? F.station.raw : '????')}
+    <span style="font-weight:400;margin-left:6px">${esc(timeM)}</span>
+    <span class="meta">${hasError ? parsed.errors.length + parsed.crossErrors.length + ' error(s)' : hasWarning ? parsed.warnings.length + parsed.crossWarnings.length + ' warning(s)' : 'OK'}</span>
+  </summary>
+  <div class="report-body">
+    <div class="raw-metar">${esc(parsed.raw)}</div>
+    ${errorBanners}${warnBanners}
+    <div class="cross-checks">
+    </div>
+    <div class="fields-grid">
+      ${renderFieldTile('Type', F.type)}
+      ${renderFieldTile('Station', F.station)}
+      ${renderFieldTile('Time', F.time)}
+      ${renderFieldTile('Modifier', F.modifier)}
+      ${renderFieldTile('Wind', F.wind)}
+      ${renderFieldTile('Wind Var', F.windVar)}
+      ${renderFieldTile('Visibility', F.visibility)}
+      ${renderFieldTile('RVR', F.rvr)}
+      ${renderFieldTile('Weather', F.weather)}
+      ${skyDisplay}
+      ${renderFieldTile('Temp/Dew', F.temp)}
+      ${renderFieldTile('Altimeter', F.altimeter)}
+      ${renderFieldTile('Remarks', F.remarks)}
+    </div>
+  </div>
+</details>`;
+}
+
+// ──────────────────────────────────────────────────────────
+// Main UI logic
+// ──────────────────────────────────────────────────────────
+function setStatus(msg) {
+  document.getElementById('status-bar').innerHTML = msg;
+}
+
+async function runCheck() {
+  const serverUrl = document.getElementById('serverUrl').value.trim().replace(/\/$/,'');
+  const hours = document.getElementById('hoursSelect').value;
+  const out = document.getElementById('output');
+  out.innerHTML = '';
+  setStatus('<span class="spinner"></span>Fetching from server…');
+
+  let records = [];
+  let usedPaste = false;
+
+  try {
+    const res = await fetch(`${serverUrl}/api/metars?hours=${hours}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    records = await res.json();
+  } catch (err) {
+    out.innerHTML = `
+      <div class="banner error"><strong>Cannot reach server:</strong> ${esc(err.message)}</div>
+      <div class="paste-area">
+        <p style="margin-bottom:8px;font-size:13px">Paste raw METAR text below (one per line) and click <strong>Validate Pasted</strong>:</p>
+        <textarea id="pastebox" placeholder="METAR KFMH 011455Z AUTO 27008KT 10SM FEW045 22/14 A3000 RMK AO2 SLP120"></textarea>
+        <button onclick="validatePaste()" style="margin-top:8px">Validate Pasted</button>
+      </div>`;
+    setStatus('Server unreachable — paste fallback shown');
+    return;
+  }
+
+  if (!records.length) {
+    out.innerHTML = '<div class="banner info">No records found for the selected window.</div>';
+    setStatus('Done — 0 records');
+    return;
+  }
+
+  renderResults(records, parseInt(hours));
+}
+
+function validatePaste() {
+  const raw = document.getElementById('pastebox').value.trim();
+  if (!raw) return;
+  const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+  const records = lines.map(l => ({ raw: l, fetchedAt: Date.now(), source: 'paste' }));
+  renderResults(records, 24);
+}
+
+function renderResults(records, hours) {
+  const out = document.getElementById('output');
+  out.innerHTML = '';
+
+  const parsed = records.map(r => parseMETAR(r.raw));
+
+  // Stats
+  const totalReports = parsed.length;
+  let hourlyCount = 0, upCount = 0, fieldErrors = 0, ruleViolations = 0;
+  parsed.forEach(p => {
+    if (p.fields.time && !p.fields.time.absent && p.fields.time.mm >= 45) hourlyCount++;
+    if (p.crossWarnings.some(w => w.includes('UP'))) upCount++;
+    fieldErrors += p.errors.length;
+    ruleViolations += p.crossErrors.length;
+  });
+
+  // Hourly grid
+  const grid = buildHourlyGrid(records, hours);
+  const missingHours = grid.filter(g => !g.hasMETAR && !g.isCurrent);
+  const missingCount = missingHours.length;
+
+  const summaryHTML = `
+<div class="summary-grid">
+  <div class="stat-card"><div class="val">${totalReports}</div><div class="lbl">Total Reports</div></div>
+  <div class="stat-card"><div class="val">${hourlyCount}</div><div class="lbl">Hourly (:45–:59)</div></div>
+  <div class="stat-card ${missingCount > 0 ? 'red' : ''}"><div class="val">${missingCount}</div><div class="lbl">Missing Hours</div></div>
+  <div class="stat-card ${fieldErrors > 0 ? 'red' : ''}"><div class="val">${fieldErrors}</div><div class="lbl">Field Errors</div></div>
+  <div class="stat-card ${ruleViolations > 0 ? 'red' : ''}"><div class="val">${ruleViolations}</div><div class="lbl">Rule Violations</div></div>
+  <div class="stat-card ${upCount > 0 ? 'yellow' : ''}"><div class="val">${upCount}</div><div class="lbl">UP Reports</div></div>
+</div>`;
+
+  const cellsHTML = grid.map(g => {
+    const cls = g.isCurrent ? 'grey' : g.hasMETAR ? 'green' : 'red';
+    const day = g.date.getUTCDate().toString().padStart(2,'0');
+    return `<div class="hour-cell ${cls}" title="${day}/${String(g.hh).padStart(2,'0')}Z"><span class="dy">${day}</span><span class="hr">${String(g.hh).padStart(2,'0')}Z</span></div>`;
+  }).join('');
+
+  const hourlyGridHTML = `
+<div class="hourly-grid">
+  <h3>Hourly Coverage — ${hours}h window</h3>
+  <div class="hour-cells">${cellsHTML}</div>
+</div>`;
+
+  const missingBanner = missingCount > 0
+    ? `<div class="banner error missing-banner"><strong>${missingCount} missing hour(s):</strong> ${missingHours.map(g => {
+        const day = g.date.getUTCDate().toString().padStart(2,'0');
+        return `${day}/${String(g.hh).padStart(2,'0')}Z`;
+      }).join(', ')}</div>`
+    : `<div class="banner ok">All hourly slots covered in the ${hours}h window.</div>`;
+
+  const reportsHTML = parsed.map((p, idx) => renderReport(p, idx)).join('');
+
+  out.innerHTML = summaryHTML + hourlyGridHTML + missingBanner + reportsHTML;
+  setStatus(`Validated ${totalReports} report(s) — ${new Date().toUTCString()}`);
+}
+</script>
+</body>
+</html>

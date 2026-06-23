@@ -1,0 +1,3 @@
+node_modules/
+metar_store.json
+.env
