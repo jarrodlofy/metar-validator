@@ -399,11 +399,8 @@ function parseMETAR(raw) {
   if (tempM) {
     const tVal = parseTemp(tempM[1]), dVal = parseTemp(tempM[2]);
     const spread = tVal - dVal;
-    let note = `${tVal}°C / ${dVal}°C, spread ${spread}°C`;
-    let warnSpread = false;
-    if (spread <= 3) { note += ' ⚠ Tight spread'; warnSpread = true; }
+    const note = `${tVal}°C / ${dVal}°C, spread ${spread}°C`;
     F.temp = { raw: consume(), ok: true, note, temp: tVal, dew: dVal };
-    if (warnSpread) result.warnings.push(`Tight temp/dew spread (${spread}°C) — fog/cloud formation likely`);
   } else {
     F.temp = { raw: tempT, ok: false, note: 'Expected TT/TdTd' };
     result.errors.push(`Temp/dew "${tempT}" not in expected format`);
