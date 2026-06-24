@@ -177,9 +177,11 @@ const server = http.createServer((req, res) => {
 
 process.on('SIGINT', () => { log('INFO', 'Shutting down (SIGINT)'); server.close(); process.exit(0); });
 process.on('SIGTERM', () => { log('INFO', 'Shutting down (SIGTERM)'); server.close(); process.exit(0); });
+process.on('uncaughtException', e => log('ERROR', `Uncaught exception: ${e.message}\n${e.stack}`));
+process.on('unhandledRejection', e => log('ERROR', `Unhandled rejection: ${e && e.message || e}`));
 
 server.listen(PORT, () => {
   log('INFO', `Server listening on port ${PORT}`);
-  fetchAndStore();
-  setInterval(fetchAndStore, FETCH_INTERVAL_MS);
+  fetchAndStore().catch(e => log('ERROR', `Startup fetch failed: ${e.message}`));
+  setInterval(() => fetchAndStore().catch(e => log('ERROR', `Interval fetch failed: ${e.message}`)), FETCH_INTERVAL_MS);
 });
