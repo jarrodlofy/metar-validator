@@ -337,12 +337,15 @@ function parseMETAR(raw) {
 
   // 10. Sky conditions — collect layers
   const skyLayers = [];
-  while (i < tokens.length && skyRe.test(next())) {
+  const skyPrefixRe = /^(SKC|CLR|NSC|NCD|CAVOK|FEW|SCT|BKN|OVC|VV)/;
+  while (i < tokens.length && (skyRe.test(next()) || skyPrefixRe.test(next()))) {
     const t = consume();
     const m = t.match(/^(SKC|CLR|NSC|NCD|CAVOK|FEW|SCT|BKN|OVC|VV)(\d{3})?(CB|TCU)?$/);
     if (m) {
       const cov = m[1], hNum = m[2] ? parseInt(m[2]) * 100 : null, addl = m[3] || null;
-      skyLayers.push({ raw: t, cov, heightFt: hNum, addl });
+      skyLayers.push({ raw: t, cov, heightFt: hNum, addl, malformed: false });
+    } else {
+      skyLayers.push({ raw: t, cov: t.match(skyPrefixRe)[1], heightFt: null, addl: null, malformed: true });
     }
   }
 
@@ -354,6 +357,10 @@ function parseMETAR(raw) {
     const covOrder = { FEW: 1, SCT: 2, BKN: 3, OVC: 4, VV: 4 };
     let ceilFound = false;
     skyLayers.forEach((l, idx) => {
+      if (l.malformed) {
+        layerErrors.push(`Invalid sky format: ${l.raw}`);
+        return;
+      }
       if (ceilFound) {
         layerErrors.push(`Layer after OVC/VV: ${l.raw}`);
         return;
