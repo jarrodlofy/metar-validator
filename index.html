@@ -645,7 +645,22 @@ function setStatus(msg) {
   document.getElementById('status-bar').innerHTML = msg;
 }
 
-async function runCheck() {
+let retryTimeout = null;
+
+function clearRetries() {
+  if (retryTimeout) { clearTimeout(retryTimeout); retryTimeout = null; }
+}
+
+function scheduleRetry(retriesLeft) {
+  clearRetries();
+  retryTimeout = setTimeout(async () => {
+    retryTimeout = null;
+    await runCheck(true, retriesLeft);
+  }, 15 * 60 * 1000);
+}
+
+async function runCheck(isRetry, retriesLeft) {
+  if (!isRetry) retriesLeft = 2;
   const serverUrl = document.getElementById('serverUrl').value.trim().replace(/\/$/,'');
   const hours = document.getElementById('hoursSelect').value;
   const out = document.getElementById('output');
@@ -677,7 +692,7 @@ async function runCheck() {
     return;
   }
 
-  renderResults(records, parseInt(hours));
+  renderResults(records, parseInt(hours), retriesLeft);
 }
 
 function validatePaste() {
@@ -688,7 +703,7 @@ function validatePaste() {
   renderResults(records, 24);
 }
 
-function renderResults(records, hours) {
+function renderResults(records, hours, retriesLeft) {
   const out = document.getElementById('output');
   out.innerHTML = '';
 
@@ -742,6 +757,13 @@ function renderResults(records, hours) {
 
   out.innerHTML = summaryHTML + hourlyGridHTML + missingBanner + reportsHTML;
   setStatus(`Validated ${totalReports} report(s) — ${new Date().toUTCString()}`);
+
+  const currentHourMissing = grid.some(g => g.isCurrent && !g.hasMETAR);
+  if (currentHourMissing && retriesLeft > 0) {
+    scheduleRetry(retriesLeft - 1);
+  } else {
+    clearRetries();
+  }
 }
 </script>
 </body>
