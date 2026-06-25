@@ -132,28 +132,35 @@ function currentHourKey() {
 
 function isCurrentHourCovered(records) {
   const now = new Date();
-  const hh = now.getUTCHours();
+  const targetHH = now.getUTCHours();
+  const cutoff = Date.now() - 2 * 3600000;
   return records.some(r => {
+    if (r.fetchedAt < cutoff) return false;
     const m = r.raw.match(/\d{2}(\d{2})(\d{2})Z/);
     if (!m) return false;
     const rHH = parseInt(m[1]), mm = parseInt(m[2]);
-    if (mm < 45 || mm > 59) return false;
-    const dt = new Date(r.fetchedAt);
-    return dt.getUTCHours() === hh
-      && dt.getUTCDate() === now.getUTCDate()
-      && dt.getUTCMonth() === now.getUTCMonth()
-      && dt.getUTCFullYear() === now.getUTCFullYear();
+    return mm >= 45 && mm <= 59 && rHH === targetHH;
   });
 }
 
-async function checkAndNotify(newRaws, allRecords) {
+// Schedules a fetch at :59:30 of the current hour, then repeats every hour
+function scheduleHourlyCheck() {
   const now = new Date();
-  const mm = now.getUTCMinutes();
+  const msUntil59 = ((59 - now.getUTCMinutes()) * 60 + (30 - now.getUTCSeconds())) * 1000;
+  const delay = msUntil59 <= 0 ? msUntil59 + 3600000 : msUntil59;
+  log('INFO', `Next hourly check in ${Math.round(delay / 1000)}s`);
+  setTimeout(async () => {
+    await fetchAndStore(true);
+    scheduleHourlyCheck();
+  }, delay);
+}
 
-  // Only check for missing hourly after :59 (the window has closed)
-  if (mm >= 59) {
+async function checkAndNotify(newRaws, allRecords, isHourlyCheck) {
+  // Only check for missing hourly on the :59 fetch
+  if (isHourlyCheck) {
     const hourKey = `missing-${currentHourKey()}`;
     if (!isCurrentHourCovered(allRecords)) {
+      const now = new Date();
       const label = `${String(now.getUTCDate()).padStart(2,'0')}/${String(now.getUTCHours()).padStart(2,'0')}Z`;
       await notify(hourKey,
         `KFMH ALERT: Missing hourly METAR for ${label}`,
@@ -273,7 +280,7 @@ async function fetchCheckWX() {
   return json.data.map(s => s.trim()).filter(s => /^(METAR|SPECI)\s+[A-Z]{4}/.test(s));
 }
 
-async function fetchAndStore() {
+async function fetchAndStore(isHourlyCheck) {
   let lines = [];
   let source = null;
 
@@ -305,7 +312,7 @@ async function fetchAndStore() {
   lastFetchSource = source;
   log('INFO', `Store now has ${merged.length} record(s)`);
 
-  await checkAndNotify(newRaws, merged);
+  await checkAndNotify(newRaws, merged, isHourlyCheck);
 }
 
 function sendJSON(res, status, data) {
@@ -376,5 +383,6 @@ server.listen(PORT, () => {
   log('INFO', `Server listening on port ${PORT}`);
   fetchAndStore().catch(e => log('ERROR', `Startup fetch failed: ${e.message}`));
   setInterval(() => fetchAndStore().catch(e => log('ERROR', `Interval fetch failed: ${e.message}`)), FETCH_INTERVAL_MS);
+  scheduleHourlyCheck();
   setInterval(checkWeeklySchedule, 60 * 1000);
 });
