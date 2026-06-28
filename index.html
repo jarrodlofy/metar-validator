@@ -81,27 +81,7 @@
 </header>
 
 <div class="controls">
-  <div class="control-group">
-    <label>Station ID</label>
-    <input type="text" id="stationInput" value="KFMH" maxlength="4" style="width:80px;text-transform:uppercase">
-  </div>
-  <div class="control-group">
-    <label>Look-back</label>
-    <select id="hoursSelect">
-      <option value="1">1 hour</option>
-      <option value="2">2 hours</option>
-      <option value="3">3 hours</option>
-      <option value="6">6 hours</option>
-      <option value="12">12 hours</option>
-      <option value="24">24 hours</option>
-      <option value="48" selected>48 hours</option>
-    </select>
-  </div>
-  <div class="control-group">
-    <label>Server URL</label>
-    <input type="text" id="serverUrl" value="https://metar-validator-kfmh-mellowing-lagoon-3794.fly.dev" style="width:220px">
-  </div>
-  <button onclick="runCheck()">Check METARs</button>
+  <button onclick="runCheck()">Check METARs — KFMH (48h)</button>
 </div>
 
 <main>
@@ -666,8 +646,8 @@ function scheduleRetry(retriesLeft) {
 
 async function runCheck(isRetry, retriesLeft) {
   if (!isRetry) retriesLeft = 2;
-  const serverUrl = document.getElementById('serverUrl').value.trim().replace(/\/$/,'');
-  const hours = document.getElementById('hoursSelect').value;
+  const serverUrl = 'https://metar-validator-kfmh-mellowing-lagoon-3794.fly.dev';
+  const hours = '48';
   const out = document.getElementById('output');
   out.innerHTML = '';
   setStatus('<span class="spinner"></span>Fetching from server…');
@@ -705,7 +685,7 @@ function validatePaste() {
   if (!raw) return;
   const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
   const records = lines.map(l => ({ raw: l, fetchedAt: Date.now(), source: 'paste' }));
-  renderResults(records, 24);
+  renderResults(records, 48);
 }
 
 function renderResults(records, hours, retriesLeft) {
