@@ -13,10 +13,6 @@ const FETCH_INTERVAL_MS = 60 * 60 * 1000;
 const WINDOW_MS = 48 * 60 * 60 * 1000;
 
 const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK || '';
-const TWILIO_SID = process.env.TWILIO_SID || '';
-const TWILIO_TOKEN = process.env.TWILIO_TOKEN || '';
-const TWILIO_FROM = process.env.TWILIO_FROM || '';
-const NOTIFY_TO = process.env.NOTIFY_TO || '';
 
 let lastFetchTime = null;
 let lastFetchSource = null;
@@ -77,27 +73,10 @@ async function sendDiscord(message) {
   }
 }
 
-async function sendSMS(message) {
-  if (!TWILIO_SID || !TWILIO_TOKEN || !TWILIO_FROM || !NOTIFY_TO) return;
-  try {
-    const auth = Buffer.from(`${TWILIO_SID}:${TWILIO_TOKEN}`).toString('base64');
-    const body = new URLSearchParams({ From: TWILIO_FROM, To: NOTIFY_TO, Body: message }).toString();
-    const url = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_SID}/Messages.json`;
-    const { status } = await httpsPost(url, {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Authorization': `Basic ${auth}`
-    }, body);
-    if (status < 200 || status >= 300) log('WARN', `SMS notification returned HTTP ${status}`);
-    else log('INFO', 'SMS notification sent');
-  } catch (e) {
-    log('WARN', `SMS notification failed: ${e.message}`);
-  }
-}
-
-async function notify(key, smsMsg, discordMsg) {
+async function notify(key, discordMsg) {
   if (notifiedKeys.has(key)) return;
   notifiedKeys.add(key);
-  await Promise.all([sendSMS(smsMsg), sendDiscord(discordMsg)]);
+  await sendDiscord(discordMsg);
 }
 
 // Basic server-side METAR validation — catches obvious field-level errors
@@ -162,10 +141,7 @@ async function checkAndNotify(newRaws, allRecords, isHourlyCheck) {
     if (!isCurrentHourCovered(allRecords)) {
       const now = new Date();
       const label = `${String(now.getUTCDate()).padStart(2,'0')}/${String(now.getUTCHours()).padStart(2,'0')}Z`;
-      await notify(hourKey,
-        `KFMH ALERT: Missing hourly METAR for ${label}`,
-        `🔴 **KFMH** — Missing hourly METAR for **${label}**`
-      );
+      await notify(hourKey, `🔴 **KFMH** — Missing hourly METAR for **${label}**`);
     }
   }
 
@@ -175,10 +151,7 @@ async function checkAndNotify(newRaws, allRecords, isHourlyCheck) {
     if (errors.length > 0) {
       const errKey = `error-${raw}`;
       const errList = errors.join('; ');
-      await notify(errKey,
-        `KFMH METAR ERROR: ${errList}\n${raw}`,
-        `🔴 **KFMH METAR ERROR**\n\`${raw}\`\n${errList}`
-      );
+      await notify(errKey, `🔴 **KFMH METAR ERROR**\n\`${raw}\`\n${errList}`);
     }
   }
 }
@@ -369,6 +342,12 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/api/fetch') {
     fetchAndStore().catch(e => log('ERROR', e.message));
     return sendJSON(res, 202, { message: 'Fetch triggered' });
+  }
+
+  if (url.pathname === '/api/test-notify') {
+    sendDiscord('🟡 **KFMH test notification** — system working')
+      .catch(e => log('ERROR', `Test notify failed: ${e.message}`));
+    return sendJSON(res, 202, { message: 'Test notifications triggered' });
   }
 
   sendJSON(res, 404, { error: 'Not found' });
