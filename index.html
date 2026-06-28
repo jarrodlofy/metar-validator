@@ -75,13 +75,18 @@
 <body>
 <header>
   <div>
-    <h1>METAR Validator</h1>
-    <div class="sub">FAA FMH-1 / WMO 4678 rules — KFMH Otis ANGB</div>
+    <h1>METAR Validator — by Jarrod Lofy</h1>
   </div>
 </header>
 
 <div class="controls">
   <button onclick="runCheck()">Check METARs — KFMH (48h)</button>
+  <button onclick="togglePaste()" id="paste-btn">Verify METARs Manually</button>
+</div>
+
+<div id="paste-area" style="display:none;background:#fff;border-bottom:1px solid #e0e0e0;padding:12px 24px;">
+  <textarea id="pastebox" rows="6" style="width:100%;box-sizing:border-box;font-family:monospace;font-size:13px;border:1px solid #ccc;border-radius:4px;padding:8px;" placeholder="Paste raw METARs here, one per line&#10;METAR KFMH 011455Z AUTO 27008KT 10SM FEW045 22/14 A3000 RMK AO2 SLP120"></textarea>
+  <button onclick="validatePaste()" style="margin-top:8px">Validate</button>
 </div>
 
 <main>
@@ -678,6 +683,14 @@ async function runCheck(isRetry, retriesLeft) {
   }
 
   renderResults(records, parseInt(hours), retriesLeft);
+}
+
+function togglePaste() {
+  const area = document.getElementById('paste-area');
+  const btn = document.getElementById('paste-btn');
+  const hidden = area.style.display === 'none';
+  area.style.display = hidden ? 'block' : 'none';
+  btn.textContent = hidden ? 'Hide Paste Area' : 'Verify METARs Manually';
 }
 
 function validatePaste() {
