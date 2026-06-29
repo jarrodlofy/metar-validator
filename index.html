@@ -269,7 +269,7 @@ function parseMETAR(raw) {
   } else if (visT === '9999') {
     visRaw = consume(); visSmVal = 9999; visConsumed = true;
     F.visibility = { raw: visRaw, ok: true, note: '≥10km (9999)' };
-  } else if (/^(P|M)?\d+(\s*\d+\/\d+)?SM$/.test(visT)) {
+  } else if (/^(P|M)?(\d+\/\d+|\d+(\s+\d+\/\d+)?)SM$/.test(visT)) {
     visRaw = consume(); visSmVal = parseFraction(visRaw); visConsumed = true;
     F.visibility = { raw: visRaw, ok: true, note: `${visRaw}` };
   } else if (/^\d+$/.test(visT) && /^\d+\/\d+SM$/.test(tokens[i+1])) {
